@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>document.documentElement.className+=' js'</script>
+<title>Optera · AI quality control for packaging lines</title>
+<meta name="description" content="Optera's AI cameras spot defective packs in real time and stop the line before they ship. Practice project with a fictional company.">
+<!-- Hero heading font: Big Shoulders Display, weight 900 only (Google Fonts, free). Needs internet. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&display=swap">
+<style>
+  /* ============ TOKENS ============
+     Colour: 60 / 30 / 10. Change a value here and it changes everywhere.
+     Font: system font (San Francisco in Safari). No font is downloaded.
+     Type scale: base 18 x 1.333. Levels used: 14 label, 18 body, 24, 32, 43, 57, 76, 101, 135.
+     Spacing: multiples of 8 (8 16 24 32 48 64 80 120).
+  */
+  :root{
+    --bg:#F4F3EF;        /* neutral 60% */
+    --ink:#111214;       /* main 30% */
+    --accent:#FF4D00;    /* accent 10% */
+    --ink-2:rgba(17,18,20,.72);   /* secondary text (shade of ink) */
+    --line:rgba(17,18,20,.16);
+    --tint:rgba(17,18,20,.06);
+    /* shades of the neutral colour, used only on the dark tunnel */
+    --on-ink-fill:rgba(244,243,239,.08); --on-ink-line:rgba(244,243,239,.16); --on-ink-mark:rgba(244,243,239,.56);
+
+    --font:system-ui,-apple-system,"SF Pro Display","Helvetica Neue",Arial,sans-serif;
+    --font-display:"Big Shoulders Display","Barlow Condensed",Impact,"Arial Narrow",sans-serif; /* hero heading only */
+
+    --fs-label:14px; --fs-body:18px; --fs-lead:24px; --fs-h3:32px; --fs-h2:57px; --fs-big:135px;
+    /* The hero H1 is the one exception to the scale: its size is calculated so the heading fills the page width. */
+
+    --cols:12; --margin:48px; --gutter:24px;
+    --cta-w:176px;         /* main button width (multiple of 8). "About" above it has the same width */
+    --gap-section:120px;   /* between blocks */
+    --gap-head:24px;       /* heading to its own content */
+  }
+  @media (max-width:1023px){
+    :root{--cols:8;--margin:32px;--gutter:16px;--gap-section:80px;--fs-h2:43px;--fs-big:101px}
+  }
+  @media (max-width:599px){
+    :root{--cols:4;--margin:24px;--gutter:16px;--gap-section:80px;--gap-head:16px;--fs-h3:24px;--fs-h2:32px;--fs-big:76px}
+  }
+
+  *{box-sizing:border-box;margin:0}
+  html{-webkit-text-size-adjust:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:var(--fs-body);line-height:1.6;font-weight:400;-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  :focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+
+  .page{padding-inline:var(--margin)} /* no max-width: side margin is always exactly --margin (48 on desktop) */
+  .grid{display:grid;grid-template-columns:repeat(var(--cols),1fr);column-gap:var(--gutter)}
+  .c{grid-column:var(--d,1/-1)}
+  @media (max-width:1023px){.c{grid-column:var(--t,1/-1)}}
+  @media (max-width:599px){.c{grid-column:var(--m,1/-1)}}
+
+  /* type */
+  .label{font-size:var(--fs-label);line-height:1.4;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-2)}
+  /* H1: condensed heavy capitals, sized to fill the content width.
+     "CATCH DEFECTS BEFORE" is 8.49 em wide in this font, so width / 8.6 makes the first line span the page.
+     Line height .88 is below the approved .95 because capitals have no descenders. */
+  .hero{container-type:inline-size;position:relative}
+
+  /* ---- "Catch the defect" (hero) ----
+     One letter of the heading ("E" in DEFECTS) starts crooked, like a bad pack on a line.
+     A scanner frame slides over the heading, locks on that letter and says DEFECT FOUND.
+     The letter snaps straight and the label turns to CAUGHT. It plays once, and again when the hero scrolls back into view.
+     No JS or "reduce motion": the heading is simply shown correct and still. */
+  .fl{display:inline-block}
+  @media (prefers-reduced-motion:no-preference){
+    .js .fl{transform:translateY(.07em) rotate(-9deg);transition:transform .5s cubic-bezier(.3,1.7,.5,1)}
+    .js .fl.fixed{transform:none}
+  }
+  .catch{position:absolute;left:0;top:0;width:0;height:0;box-sizing:border-box;border:3px solid var(--accent);opacity:0;pointer-events:none;z-index:2;
+    transition:transform 1.3s cubic-bezier(.65,0,.35,1),width .25s ease-out,height .25s ease-out,opacity .25s,background-color .3s}
+  .catch.go{opacity:1}
+  .catch.found{transition-duration:0s,.2s,.2s,.25s,.3s} /* once found, the frame no longer slides */
+  .catch.caught{background-color:rgba(255,77,0,.12)}
+  .catch-chip{position:absolute;left:-3px;bottom:100%;margin-bottom:3px;white-space:nowrap;font:600 var(--fs-label)/1 var(--font);text-transform:none;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--bg);background:var(--ink);padding:8px 12px;opacity:0;transition:opacity .2s}
+  .catch.found .catch-chip{opacity:1}
+  .catch.caught .catch-chip{background:var(--accent);color:var(--ink)}
+  .catch.below .catch-chip{bottom:auto;top:100%;margin:3px 0 0}
+  .catch.fade{opacity:0;transition:opacity .5s}
+  h1{font-family:var(--font-display);font-weight:900;text-transform:uppercase;letter-spacing:0;line-height:.88;text-wrap:balance;
+     font-size:clamp(56px,10vw,160px);font-size:calc(100cqw / 8.451);
+     margin-inline:-.02em -.05em} /* the box is a little wider than the page area, because the letters' advance is wider than their ink. The ink of the first line (C ... E) then spans exactly from the left margin to the right margin */
+  @media (max-width:599px){h1{font-size:calc(100cqw / 7.2)}}
+  h2{font-size:var(--fs-h2);line-height:.95;font-weight:700;letter-spacing:-.03em}
+  h3{font-size:var(--fs-h3);line-height:1.2;font-weight:600;letter-spacing:-.01em}
+  .lead{font-size:var(--fs-lead);line-height:1.4;max-width:34ch}
+  p{max-width:65ch}
+  .muted{color:var(--ink-2)}
+
+  /* Top edge = top of capital letters (not the line box), so side-by-side columns
+     start on one visible line. Works in Safari 18.2+ and Chrome 133+; older browsers ignore it. */
+  form label:first-child span,#faq .label,#request .label,#req-p{text-box:trim-start cap alphabetic}
+  /* Problem block (desktop): one baseline grid. The text line-height is exactly half of the heading line-height, so the first text line
+     stands on the first heading baseline, and every second text line stands on a heading baseline (line to line). */
+  #h-problem{text-box:trim-start cap alphabetic}
+  @media (min-width:1024px){
+    .two{align-items:first baseline}
+    .two p{line-height:calc(var(--fs-h2)*.475)}
+    .two p+p{margin-top:0}
+  }
+  /* no one-word last lines */
+  h2,h3{text-wrap:balance}
+  p{text-wrap:pretty}
+
+  /* blocks */
+  .sec{margin-top:var(--gap-section)}
+  .sec>.label{display:block;margin-bottom:16px}
+  .sec .head{margin-bottom:var(--gap-head)}
+  .rule{border-top:1px solid var(--ink);padding-top:24px}
+
+  /* buttons: same height, radius and font. Only the fill differs. */
+  .btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 24px;font:600 var(--fs-body)/1 var(--font);text-decoration:none;border:1px solid var(--ink);cursor:pointer;border-radius:0}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--ink)}
+  .btn.ghost{background:transparent;color:var(--ink)}
+  .btn:hover{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+  .btn.primary:hover{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+
+  /* header */
+  header .grid{height:80px;align-items:center}
+  .logo{display:inline-flex;align-items:center;min-height:44px;font-weight:700;font-size:var(--fs-lead);letter-spacing:-.02em;text-decoration:none}
+  nav{display:flex;gap:32px}
+  /* GRID AXES (desktop). The page has vertical lines that run from top to bottom:
+       column 5 start:  "How it works" in the menu, where the text under the heading and the trust line END,
+                        2nd card ("Decide"), FAQ list, pilot descriptions, 2nd table column, "contact" in the footer
+       column 7 start:  "Proof" in the menu, the text of the Problem block, the Proof text, the form
+       column 9 start:  "FAQ" in the menu, 3rd table column, the copyright in the footer
+       right margin:    "About", the hero button, and the end of "...BEFORE" in the heading
+     Menu links are placed on columns 5, 7 and 9 (equal steps of 2 columns). */
+  @media (min-width:1024px){
+    header .grid>*{grid-row:1}
+    header nav{display:contents}
+    header nav a{justify-self:start}
+    header nav a:nth-child(1){grid-column:5/7}
+    header nav a:nth-child(2){grid-column:7/9}
+    header nav a:nth-child(3){grid-column:9/10}
+  }
+  nav a{display:inline-flex;align-items:center;min-height:44px;text-decoration:none;font-weight:600;font-size:var(--fs-label)}
+  nav a:hover{text-decoration:underline;text-underline-offset:6px}
+  header .grid{position:relative}
+  /* "About" sits right above the hero button on the same right line (the right margin),
+     the same line where the first heading line ("...BEFORE") ends */
+  header .about{justify-self:end;text-align:right;display:inline-flex;align-items:center;min-height:44px;text-decoration:none;font-weight:600;font-size:var(--fs-label)}
+  header .about:hover{text-decoration:underline;text-underline-offset:6px}
+  @media (max-width:1023px){header .about{display:none}}
+  @media (max-width:599px){header nav{display:none}}
+
+  /* hero */
+  .hero{margin-top:64px}
+  .hero h1{margin-top:24px}
+  .hero .row{margin-top:24px;align-items:end;row-gap:32px}
+  .hero .btn{justify-self:end;width:var(--cta-w)}
+  .hero .lead{max-width:none}
+  /* on desktop the text under the heading and the trust line end exactly on the column-5 axis
+     (they cover columns 1-4 and the gutter after column 4) */
+  @media (min-width:1024px){.hero .lead,.trust{margin-right:calc(-1*var(--gutter))}}
+  /* desktop: the hero button is exactly as tall as the text on its left:
+     its top is the top of the capital letters of the first line, its bottom is the baseline of the last line */
+  @media (min-width:1024px){
+    .hero .row{align-items:stretch}
+    .hero .lead{text-box:trim-both cap alphabetic}
+    .hero .btn{align-self:stretch}
+  }
+  @media (max-width:1023px){.hero .btn{justify-self:start;width:auto}}
+  /* Hero visual: what the camera sees. A photo of a packaging line; the system scans it, marks one bad pack and stops the line.
+     Everything is placed in "image units" (the photo is 1254 px wide = 100cqw), so the marks stay on the right boxes at any width.
+     --y0 = how many image pixels are cut off at the top. The sequence starts after the heading animation (see script). */
+  .insp{position:relative;container-type:inline-size;background:var(--ink);aspect-ratio:16/9;margin-top:48px;overflow:hidden;--y0:360;--u:calc(100cqw/1254)}
+  .insp-img{position:absolute;left:0;top:calc(var(--y0)*var(--u)*-1);width:100%;height:auto;display:block}
+  .insp::after{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,rgba(17,18,20,.55),rgba(17,18,20,0) 22%,rgba(17,18,20,0) 70%,rgba(17,18,20,.65))}
+  .bx{position:absolute;z-index:2;left:calc(var(--x)*var(--u));top:calc((var(--y) - var(--y0))*var(--u));width:calc(var(--w)*var(--u));height:calc(var(--h)*var(--u));
+    border:2px solid var(--bg);opacity:0;pointer-events:none}
+  .bx b{position:absolute;left:-2px;bottom:100%;margin-bottom:4px;white-space:nowrap;padding:4px 8px;background:var(--ink);color:var(--bg);font:600 var(--fs-label)/1.2 var(--font);letter-spacing:.08em;text-transform:uppercase}
+  .bx.bad{border-color:var(--accent);background:rgba(255,77,0,.14);border-width:3px}
+  .bx.bad b{background:var(--accent);color:var(--ink)}
+  .scan{position:absolute;z-index:3;top:0;bottom:0;left:0;width:2px;background:var(--bg);opacity:0;box-shadow:0 0 24px 6px rgba(244,243,239,.35)}
+  .hud{position:absolute;z-index:4;left:24px;right:24px;display:flex;justify-content:space-between;align-items:center;gap:16px;
+    font:600 var(--fs-label)/1.4 var(--font);letter-spacing:.08em;text-transform:uppercase;color:var(--bg)}
+  .bx .long{display:inline}
+  .hud-t{top:0;left:0;right:0}.hud-t span{padding:8px 16px;background:var(--ink)}
+  /* bottom row: two chips of the same height and the same baseline, one in each bottom corner of the picture
+     (the left edge of column 1 and the right edge of the last column) */
+  .hud-b{left:0;right:0;bottom:0;align-items:stretch}
+  .hud .dim{padding:8px 16px;background:var(--ink);color:rgba(244,243,239,.7)}
+  .st{position:relative;display:inline-block;padding:8px 16px;background:var(--ink);min-width:176px}
+  .st span{display:block}
+  .st .stop{position:absolute;inset:8px 16px;opacity:0;color:var(--accent)}
+  .insp.on .scan{animation:scan 3.2s linear forwards}
+  .insp.on .bx{animation:bxin .4s forwards}
+  .insp.on .bx.bad{animation-delay:.85s}
+  .insp.on .bx.c{animation-delay:1.7s}.insp.on .bx.d{animation-delay:2.2s}.insp.on .bx.e{animation-delay:2.6s}
+  .insp.on .st .run{animation:fadeout .2s 1s forwards}
+  .insp.on .st .stop{animation:fadein .2s 1s forwards}
+  @keyframes scan{0%{left:0;opacity:0}6%{opacity:1}94%{opacity:1}100%{left:100%;opacity:0}}
+  @keyframes bxin{to{opacity:1}}
+  @keyframes fadeout{to{opacity:0}}
+  @keyframes fadein{to{opacity:1}}
+  .insp.out .bx,.insp.out .st span{transition:opacity .6s;opacity:0!important;animation:none!important}
+  .insp.out .st .run{opacity:1!important}
+  @media (prefers-reduced-motion:reduce){
+    .insp .bx{opacity:1;animation:none!important}.insp .scan{display:none}
+    .insp .st .run{opacity:0}.insp .st .stop{opacity:1}
+  }
+  .trust{max-width:none;margin-top:24px;padding:16px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-size:var(--fs-label);color:var(--ink-2)}
+  @media (max-width:599px){.insp{aspect-ratio:4/3;--y0:300}.hud-t{display:none}.bx .long{display:none}}
+
+  /* problem */
+  .two{row-gap:24px}
+  @media (max-width:1023px){.two p+p{margin-top:16px}}
+
+  /* how */
+  .steps{row-gap:32px}
+  .steps .num{font-size:var(--fs-label);font-weight:600;letter-spacing:.08em;color:var(--ink-2);display:block;margin-bottom:16px}
+  .steps h3{margin-bottom:8px}
+
+  /* proof: the one break */
+  .pf-dark{background:var(--ink);color:var(--bg);padding:48px;display:flex;flex-direction:column;justify-content:space-between;gap:48px;min-height:320px}
+  .pf-dark strong{display:block;font-size:var(--fs-big);line-height:.95;letter-spacing:-.05em;font-weight:700;color:var(--accent);margin-left:-.04em} /* margin: optical alignment, the digit "6" has a side gap */
+  .pf-dark .label{color:var(--bg);opacity:.8}
+  .pf-h3{margin-top:24px}
+  .pf-p{margin-top:16px}
+  /* Desktop: the "63%" and the text on the right share ONE baseline (the last line of the h3),
+     and the bottom edge of the dark block is the baseline of the last text line.
+     The dark block is a background that spans both grid rows. */
+  @media (min-width:1024px){
+    .pf{display:grid;grid-template-columns:repeat(var(--cols),1fr);column-gap:var(--gutter);grid-template-rows:minmax(320px,auto) auto}
+    .pf-bg{grid-area:1/1/3/7;background:var(--ink)}
+    .pf-dark{display:contents}
+    .pf-dark .label{grid-area:1/1/2/7;align-self:start;padding:48px 48px 0}
+    .pf-dark strong{grid-area:1/1/2/7;align-self:last baseline;padding:0 48px;text-box:trim-end cap alphabetic}
+    .pf-h3{grid-area:1/7/2/-1;align-self:last baseline;margin-top:0;text-box:trim-end cap alphabetic}
+    .pf-p{grid-area:2/7/3/-1;margin-top:0;padding-top:16px;text-box:trim-end cap alphabetic}
+  }
+  /* ---- Tunnel of frames (replaces the 4 clip tiles) ----
+     Four flat walls in CSS 3D. On each wall a long strip of frames slides slowly away from the viewer.
+     All sizes are in cqw (1cqw = 1% of the tunnel width), so it scales with the page.
+     Depth 200cqw, frame step 20cqw, the pattern repeats every 80cqw, one loop = 32s.
+     To use a real photo or clip later: put <img> or <video> inside a .tn-tile. */
+  .tn{position:relative;container-type:inline-size;aspect-ratio:16/7;background:var(--ink);overflow:hidden;margin-top:48px}
+  .tn-scene{position:absolute;inset:0;perspective:50cqw}
+  .tn-wall{position:absolute;overflow:hidden}
+  .tn-wall::after{content:"";position:absolute;inset:0;pointer-events:none} /* fog: the far end fades into the dark */
+  .tn-strip{position:absolute;display:grid;will-change:transform}
+  /* --o = how far the viewer has walked, 0-80 (in cqw). The script sets it from the page scroll. */
+  .tn{--o:0}
+  .tn-l,.tn-r{top:0;width:200cqw;height:100%}
+  .tn-f,.tn-c{left:0;width:100%;height:200cqw}
+  .tn-l{left:0;transform-origin:0 50%;transform:rotateY(90deg)}
+  .tn-r{right:0;transform-origin:100% 50%;transform:rotateY(-90deg)}
+  .tn-f{bottom:0;transform-origin:50% 100%;transform:rotateX(90deg)}
+  .tn-c{top:0;transform-origin:50% 0;transform:rotateX(-90deg)}
+  .tn-l::after{background:linear-gradient(to right,transparent 30%,var(--ink) 92%)}
+  .tn-r::after{background:linear-gradient(to left,transparent 30%,var(--ink) 92%)}
+  .tn-f::after{background:linear-gradient(to top,transparent 30%,var(--ink) 92%)}
+  .tn-c::after{background:linear-gradient(to bottom,transparent 30%,var(--ink) 92%)}
+  .tn-l .tn-strip,.tn-r .tn-strip{top:0;width:320cqw;height:100%;grid-template-columns:repeat(16,20cqw);grid-template-rows:repeat(2,1fr);
+    background:linear-gradient(to right,var(--on-ink-line) 1px,transparent 1px) 0 0/20cqw 100%,linear-gradient(to bottom,var(--on-ink-line) 1px,transparent 1px) 0 0/100% 50%}
+  .tn-f .tn-strip,.tn-c .tn-strip{left:0;width:100%;height:320cqw;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(16,20cqw);
+    background:linear-gradient(to right,var(--on-ink-line) 1px,transparent 1px) 0 0/25% 100%,linear-gradient(to bottom,var(--on-ink-line) 1px,transparent 1px) 0 0/100% 20cqw}
+  /* walking forward = frames come towards the viewer */
+  .tn-l .tn-strip{left:-80cqw;transform:translateX(calc(80cqw - var(--o)*1cqw))}
+  .tn-r .tn-strip{left:0;transform:translateX(calc(var(--o)*1cqw - 80cqw))}
+  .tn-f .tn-strip{top:0;transform:translateY(calc(var(--o)*1cqw - 80cqw))}
+  .tn-c .tn-strip{top:-80cqw;transform:translateY(calc(80cqw - var(--o)*1cqw))}
+  .tn.can-drag{cursor:grab}
+  .tn.dragging{cursor:grabbing;user-select:none}
+  /* one frame: a placeholder drawing of a pack with a label */
+  .tn-tile{position:relative;margin:1.6cqw;background:var(--on-ink-fill);border:1px solid var(--on-ink-line);display:grid;place-items:center;overflow:hidden}
+  .tn-tile::before{content:"";width:44%;height:56%;border:.3cqw solid var(--on-ink-mark);background:linear-gradient(var(--on-ink-mark) 0 0) 50% 64%/62% 12% no-repeat}
+  .tn-tile.defect::before{background-position:20% 30%}                                        /* the label is in the wrong place */
+  .tn-tile.defect::after{content:"";position:absolute;inset:12%;border:.3cqw solid var(--accent)} /* the system marks the defect */
+  .tn-tile img,.tn-tile video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  /* caption and pause button, flat on top of the tunnel */
+  .tn-ui{position:absolute;inset:auto 0 0 0;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding:24px}
+  .tn-ui{pointer-events:none}
+  .tn-ui span{font:600 var(--fs-label)/1.4 var(--font);text-transform:uppercase;letter-spacing:.08em;color:var(--bg);background:var(--ink);padding:8px 16px}
+  @media (max-width:599px){.tn{aspect-ratio:4/3}.tn-ui{padding:16px}}
+  @media (prefers-reduced-motion:reduce){.tn-hint{display:none}}
+  @media (max-width:599px){.pf-dark{padding:24px}}
+
+  /* pilot */
+  .rows .row{border-top:1px solid var(--line);padding:16px 0;min-height:64px;align-items:start}
+  .rows .row:last-child{border-bottom:1px solid var(--line)}
+  .rows .name{font-weight:600}
+
+  /* compare */
+  .cmp .row{border-top:1px solid var(--line);align-items:stretch}
+  .cmp .row>div{padding:16px 0;min-height:64px;display:flex;align-items:center}
+  .cmp .row .opt{background:var(--tint);padding-inline:16px;font-weight:600}
+  .cmp .row.th>div{min-height:48px}
+  .cmp .row:last-child{border-bottom:1px solid var(--line)}
+  @media (max-width:599px){.cmp .row .crit{padding-bottom:0;min-height:0;font-weight:600}.cmp .row>div{min-height:48px}}
+
+  /* faq */
+  details{border-top:1px solid var(--line)}
+  details:last-child{border-bottom:1px solid var(--line)}
+  summary{list-style:none;cursor:pointer;min-height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px;font-weight:600;font-size:var(--fs-lead);line-height:1.3;padding:8px 0}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";font-weight:400;font-size:var(--fs-lead)}
+  details[open] summary::after{content:"\2212"}
+  details p{padding:0 0 24px;color:var(--ink-2)}
+
+  /* request */
+  form{display:grid;gap:16px}
+  label span{display:block;font-size:var(--fs-label);font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-2);margin-bottom:8px}
+  input,select{width:100%;height:64px;padding:0 16px;font:400 var(--fs-body) var(--font);color:var(--ink);background:transparent;border:1px solid var(--ink);border-radius:0;appearance:none}
+  .note{min-height:24px;font-size:var(--fs-label);color:var(--ink-2)}
+
+  footer{margin-top:var(--gap-section);padding:24px 0 64px;border-top:1px solid var(--ink);font-size:var(--fs-label)}
+  footer .grid{row-gap:24px}
+
+  /* Grid viewer (a design tool, not part of the page): shows the margins, columns and gutters. Key G, the button, or #grid in the address. */
+  .gv{position:fixed;inset:0;z-index:1000;pointer-events:none;display:none}
+  .gv.on{display:block}
+  .gv-in{position:absolute;inset:0;padding-inline:var(--margin);display:grid;grid-template-columns:repeat(var(--cols),1fr);column-gap:var(--gutter)}
+  .gv-in i{background:rgba(255,77,0,.10);box-shadow:inset 1px 0 rgba(255,77,0,.55),inset -1px 0 rgba(255,77,0,.55)}
+  .gv-in i:nth-child(n+9){display:none}
+  @media (min-width:1024px){.gv-in i:nth-child(n+9){display:block}}
+  @media (max-width:599px){.gv-in i:nth-child(n+5){display:none}}
+  .gv-m{position:absolute;top:0;bottom:0;width:var(--margin);background:repeating-linear-gradient(135deg,rgba(17,18,20,.10) 0 1px,transparent 1px 8px);box-shadow:inset 0 0 0 1px rgba(17,18,20,.25)}
+  .gv-m.l{left:0}.gv-m.r{right:0}
+  .gv-btn{position:fixed;right:16px;bottom:16px;z-index:1001;min-height:40px;padding:0 16px;border:1px solid var(--ink);background:var(--bg);color:var(--ink);font:600 var(--fs-label)/1 var(--font);letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+  .gv-btn[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+  .gv-info{position:fixed;left:16px;bottom:16px;min-height:40px;display:none;align-items:center;z-index:1001;padding:6px 12px;background:var(--ink);color:var(--bg);font:600 var(--fs-label)/1.2 var(--font);letter-spacing:.04em;white-space:normal;max-width:calc(100vw - 140px)}
+  .gv.on~.gv-info{display:flex}
+
+  /* footer link and the privacy pop-up */
+  .linkbtn{all:unset;box-sizing:border-box;cursor:pointer;color:var(--ink-2);text-decoration:underline;text-underline-offset:4px;font:inherit;line-height:inherit}
+  .linkbtn:hover{color:var(--ink)}
+  .linkbtn:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+  .modal{border:1px solid var(--ink);background:var(--bg);color:var(--ink);padding:0;width:min(560px,calc(100vw - 2*var(--margin)));max-height:calc(100vh - 2*var(--margin));overflow:auto;margin:auto}
+  .modal::backdrop{background:rgba(17,18,20,.6)}
+  .modal-in{padding:32px}
+  .modal h2{font-size:var(--fs-h3);line-height:1.1;letter-spacing:-.02em;margin-bottom:16px}
+  .modal h3{font-size:var(--fs-body);font-weight:600;margin-top:24px;margin-bottom:8px}
+  .modal .btn{margin-top:32px}
+  @media (max-width:599px){.modal-in{padding:24px}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="page">
+    <div class="grid">
+      <a class="logo c" style="--d:1/4;--t:1/4;--m:1/-1" href="#top">Optera</a>
+      <nav class="c" style="--d:5/10;--t:4/8;--m:1/-1" aria-label="Main">
+        <a href="#how">How it works</a><a href="#proof">Proof</a><a href="#faq">FAQ</a>
+      </nav>
+      <a class="about c" style="--d:10/-1" href="#about">About</a>
+    </div>
+  </div>
+</header>
+
+<main id="top" class="page">
+
+  <!-- 01 HERO -->
+  <section class="hero" aria-labelledby="h1">
+    <span class="label">AI quality control for packaging lines</span>
+    <h1 id="h1" class="c" style="--d:1/11;--t:1/-1;--m:1/-1">Catch d<span class="fl" id="flaw">e</span>fects before they leave your line.</h1>
+    <!-- "Catch" animation: a scanner frame finds the crooked letter, the line "stops", the letter is fixed. -->
+    <div class="catch" id="catch" aria-hidden="true"><span class="catch-chip" id="catch-chip"></span></div>
+    <div class="grid row">
+      <p class="lead c" style="--d:1/5;--t:1/6;--m:1/-1">Optera's AI cameras spot bad packs in real time and stop the line. Installed in 2 days, no new hardware.</p>
+      <a class="btn primary c" style="--d:10/-1;--t:6/-1;--m:1/-1" href="#request">Request a pilot</a>
+    </div>
+    <div class="insp" id="insp" role="img" aria-label="Camera view of a packaging line. The system scans the cartons, marks one with a peeling label as a defect, and the line stops.">
+      <img class="insp-img" src="images/hero-line.jpg" alt="" width="1254" height="1254">
+      <div class="bx bad" style="--x:345;--y:450;--w:385;--h:545"><b>Defect<span class="long"> · label peeling</span></b></div>
+      <div class="bx c" style="--x:728;--y:430;--w:212;--h:392"><b>OK</b></div>
+      <div class="bx d" style="--x:942;--y:425;--w:142;--h:292"><b>OK</b></div>
+      <div class="bx e" style="--x:1088;--y:420;--w:88;--h:222"></div>
+      <div class="scan"></div>
+      <div class="hud hud-t"><span>Camera 02 · Live view</span></div>
+      <div class="hud hud-b"><span class="st"><span class="run">Line running</span><span class="stop">Line stopped</span></span><span class="dim">Illustration</span></div>
+    </div>
+  </section>
+
+  <!-- 02 PROBLEM -->
+  <section class="sec" aria-labelledby="h-problem">
+    <span class="label">01 / Problem</span>
+    <div class="grid two">
+      <h2 id="h-problem" class="c" style="--d:1/7;--t:1/-1;--m:1/-1">One bad pack costs more than a stopped line.</h2>
+      <div class="c" style="--d:7/-1;--t:1/-1;--m:1/-1">
+        <p>A defective pack that reaches a customer means returns, complaints and lost trust.</p>
+        <p class="muted">A system that stops the line for no reason costs money too. You need one you can rely on.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 HOW IT WORKS -->
+  <section class="sec" id="how" aria-labelledby="h-how">
+    <span class="label">02 / How it works</span>
+    <h2 id="h-how" class="head" style="max-width:12ch">See. Decide. Stop.</h2>
+    <div class="grid steps">
+      <div class="rule c" style="--d:span 4;--t:1/-1;--m:1/-1"><span class="num">01</span><h3>See</h3><p class="muted">Cameras watch every pack on the line in real time.</p></div>
+      <div class="rule c" style="--d:span 4;--t:1/-1;--m:1/-1"><span class="num">02</span><h3>Decide</h3><p class="muted">The AI checks each pack for wrong labels, damage and foreign objects.</p></div>
+      <div class="rule c" style="--d:span 4;--t:1/-1;--m:1/-1"><span class="num">03</span><h3>Stop</h3><p class="muted">When a defect is found, the line stops before the bad pack ships.</p></div>
+    </div>
+  </section>
+
+  <!-- 04 PROOF (the one break) -->
+  <section class="sec proof" id="proof" aria-labelledby="h-proof">
+    <span class="label">03 / Proof</span>
+    <h2 id="h-proof" class="head" style="max-width:14ch">Results from a real line.</h2>
+    <div class="pf">
+      <div class="pf-bg" aria-hidden="true"></div>
+      <div class="pf-dark"><span class="label">Six-week pilot</span><strong>63%</strong></div>
+      <h3 class="pf-h3">fewer defective packs reached customers.</h3>
+      <p class="pf-p muted">Measured during a six-week pilot on a real production line.</p>
+    </div>
+    <div class="tn" id="tunnel">
+      <div class="tn-scene" role="img" aria-label="Illustrative images of a packaging line in a tunnel. One pack with a peeling label is marked as a defect.">
+        <div class="tn-wall tn-l"><div class="tn-strip" data-wall="l"></div></div>
+        <div class="tn-wall tn-r"><div class="tn-strip" data-wall="r"></div></div>
+        <div class="tn-wall tn-f"><div class="tn-strip" data-wall="f"></div></div>
+        <div class="tn-wall tn-c"><div class="tn-strip" data-wall="c"></div></div>
+      </div>
+      <div class="tn-ui">
+        <span>Illustrative frames · packaging line</span>
+        <span class="tn-hint">Scroll to walk through</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 PILOT -->
+  <section class="sec" aria-labelledby="h-pilot">
+    <span class="label">04 / Pilot</span>
+    <h2 id="h-pilot" class="head" style="max-width:14ch">How a pilot works.</h2>
+    <div class="rows">
+      <div class="grid row"><div class="name c" style="--d:1/5;--t:1/4;--m:1/-1">1. Intro call</div><div class="muted c" style="--d:5/-1;--t:4/-1;--m:1/-1">We learn about your line and the defects that matter to you.</div></div>
+      <div class="grid row"><div class="name c" style="--d:1/5;--t:1/4;--m:1/-1">2. Installation</div><div class="muted c" style="--d:5/-1;--t:4/-1;--m:1/-1">Cameras go up in about 2 days. No new hardware.</div></div>
+      <div class="grid row"><div class="name c" style="--d:1/5;--t:1/4;--m:1/-1">3. Six weeks on your line</div><div class="muted c" style="--d:5/-1;--t:4/-1;--m:1/-1">Optera watches your real production line.</div></div>
+      <div class="grid row"><div class="name c" style="--d:1/5;--t:1/4;--m:1/-1">4. Results</div><div class="muted c" style="--d:5/-1;--t:4/-1;--m:1/-1">You see the numbers and decide what comes next.</div></div>
+    </div>
+  </section>
+
+  <!-- 06 WHY -->
+  <section class="sec" aria-labelledby="h-why">
+    <span class="label">05 / Why Optera</span>
+    <h2 id="h-why" class="head" style="max-width:14ch">Simpler than the big vendors.</h2>
+    <div class="cmp">
+      <div class="grid row th"><div class="label c" style="--d:1/5;--t:1/4;--m:1/-1">Criteria</div><div class="label c" style="--d:5/9;--t:4/6;--m:1/3">Big vendors</div><div class="label opt c" style="--d:9/-1;--t:6/-1;--m:3/-1;padding-inline:16px;background:var(--tint)">Optera</div></div>
+      <div class="grid row"><div class="crit c" style="--d:1/5;--t:1/4;--m:1/-1">Installation</div><div class="muted c" style="--d:5/9;--t:4/6;--m:1/3">Complex</div><div class="opt c" style="--d:9/-1;--t:6/-1;--m:3/-1">About 2 days</div></div>
+      <div class="grid row"><div class="crit c" style="--d:1/5;--t:1/4;--m:1/-1">Hardware</div><div class="muted c" style="--d:5/9;--t:4/6;--m:1/3">Often new equipment</div><div class="opt c" style="--d:9/-1;--t:6/-1;--m:3/-1">No new hardware</div></div>
+      <div class="grid row"><div class="crit c" style="--d:1/5;--t:1/4;--m:1/-1">Cost</div><div class="muted c" style="--d:5/9;--t:4/6;--m:1/3">High</div><div class="opt c" style="--d:9/-1;--t:6/-1;--m:3/-1">Lower</div></div>
+    </div>
+  </section>
+
+  <!-- 07 FAQ -->
+  <section class="sec" id="faq" aria-labelledby="h-faq">
+    <div class="grid" style="row-gap:24px">
+      <div class="c" style="--d:1/5;--t:1/-1;--m:1/-1">
+        <span class="label" style="display:block;margin-bottom:16px">06 / Questions</span>
+        <h2 id="h-faq">Straight answers.</h2>
+      </div>
+      <div class="c" style="--d:5/-1;--t:1/-1;--m:1/-1">
+        <details open><summary>What about false alarms?</summary><p>It is the first thing we measure in a pilot. You see the false-alarm rate on your own line before you decide anything.</p></details>
+        <details><summary>Do I need new hardware?</summary><p>No new hardware. Installation takes about 2 days.</p></details>
+        <details><summary>How long is a pilot?</summary><p>Six weeks on a real production line.</p></details>
+        <details><summary>Which defects can it catch?</summary><p>Wrong or missing labels, damaged packs and foreign objects.</p></details>
+        <details><summary>Who is it for?</summary><p>Mid-size food and cosmetics plants that want a simpler alternative to the big vendors.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- 08 REQUEST -->
+  <section class="sec" id="request" aria-labelledby="h-req">
+    <div class="grid" style="row-gap:32px">
+      <div class="c" style="--d:1/7;--t:1/-1;--m:1/-1">
+        <span class="label" style="display:block;margin-bottom:16px">07 / Request a pilot</span>
+        <h2 id="h-req" class="head">Run a six-week pilot on your line.</h2>
+        <p class="muted" id="req-p">Tell us about your line. We will reply with next steps.</p>
+      </div>
+      <form class="c" style="--d:7/-1;--t:1/-1;--m:1/-1" id="f" novalidate>
+        <label><span>Name</span><input name="name" autocomplete="name"></label>
+        <label><span>Work email</span><input name="email" type="email" autocomplete="email"></label>
+        <label><span>Company</span><input name="company" autocomplete="organization"></label>
+        <label><span>Type of line</span><select name="line"><option>Food packaging</option><option>Cosmetics packaging</option><option>Other</option></select></label>
+        <button class="btn primary" type="submit">Request a pilot</button>
+        <p class="note" id="note" role="status"></p>
+      </form>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="page">
+    <div class="grid">
+      <div class="c" id="about" style="--d:1/5;--t:1/5;--m:1/-1"><b>Optera</b><br><span class="muted">AI quality control for packaging lines</span></div>
+      <div class="c" style="--d:5/9;--t:5/-1;--m:1/-1"><span class="muted">hello@optera.example</span><br><span class="muted">+48 22 000 00 00</span></div>
+      <div class="c" style="--d:9/-1;--t:1/-1;--m:1/-1"><span class="muted">&copy; 2026 Optera. Practice project with a fictional company.</span><br><button class="linkbtn" type="button" id="privacy-open">Privacy</button></div>
+    </div>
+  </div>
+</footer>
+
+<dialog class="modal" id="privacy" aria-labelledby="privacy-h">
+  <div class="modal-in">
+    <h2 id="privacy-h">Privacy</h2>
+    <p class="muted">This is a practice project with a fictional company. The text below is a placeholder.</p>
+    <h3>What we collect</h3>
+    <p>Your name, work email, company and type of line, only when you fill in the pilot request form.</p>
+    <h3>Why</h3>
+    <p>To reply to your request and to plan a pilot. We do not sell your data and we do not send newsletters.</p>
+    <h3>How long we keep it</h3>
+    <p>Twelve months after the last contact, then it is deleted.</p>
+    <h3>Your rights</h3>
+    <p>You can ask to see, correct or delete your data at any time: privacy@optera.example.</p>
+    <button class="btn ghost" type="button" id="privacy-close">Close</button>
+  </div>
+</dialog>
+
+<script>
+  /* "Catch the defect": see the CSS comment above .fl. Timeline (ms after start):
+     0     the scanner frame appears at the left of the heading and slides to the crooked letter (1300)
+     1500  it locks on, the label says DEFECT FOUND
+     2700  the letter snaps straight, the label says CAUGHT
+     3900  the frame fades out. */
+  (function(){
+    if(matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+    var hero=document.querySelector('.hero'),h1=document.getElementById('h1'),fl=document.getElementById('flaw'),
+        box=document.getElementById('catch'),chip=document.getElementById('catch-chip'),label=document.querySelector('.hero .label');
+    var timers=[],running=false,armed=false,lastEnd=0;
+    function later(ms,fn){timers.push(setTimeout(fn,ms))}
+    function reset(){
+      timers.forEach(clearTimeout);timers=[];running=false;
+      box.className='catch';box.style.transition='none';box.style.width=box.style.height='0px';chip.textContent='';
+      box.offsetWidth;box.style.transition='';
+    }
+    function start(){
+      var hr=hero.getBoundingClientRect(),fr=fl.getBoundingClientRect(),lr=h1.getBoundingClientRect();
+      var pad=parseFloat(getComputedStyle(h1).fontSize)*0.07;
+      var x=fr.left-hr.left-pad,y=fr.top-hr.top-pad,w=fr.width+2*pad,h=fr.height+2*pad,sx=lr.left-hr.left;
+      box.style.transition='none';
+      box.style.width=w+'px';box.style.height=h+'px';
+      box.style.transform='translate('+sx+'px,'+y+'px)';
+      box.offsetWidth;box.style.transition='';
+      box.classList.add('go');
+      box.style.transform='translate('+x+'px,'+y+'px)';
+      later(1500,function(){
+        box.classList.add('found');chip.textContent='Defect found';
+        var c=chip.getBoundingClientRect(),g=document.createRange();g.selectNodeContents(label);
+        var hit=Array.prototype.some.call(g.getClientRects(),function(l){return c.left<l.right+8&&c.right>l.left&&c.top<l.bottom+4&&c.bottom>l.top});
+        if(hit) box.classList.add('below'); /* do not cover the small label above the heading: put the chip under the frame instead */
+      });
+      later(2700,function(){fl.classList.add('fixed');box.classList.add('caught');chip.textContent='Caught'});
+      later(3900,function(){box.classList.add('fade')});
+      later(4600,function(){reset();lastEnd=Date.now()});
+    }
+    function play(){
+      if(running) return;
+      reset();running=true;armed=true;
+      var wasFixed=fl.classList.contains('fixed');
+      fl.classList.remove('fixed');
+      later(wasFixed?650:0,start);                   /* wait until the letter is crooked again, then measure it */
+    }
+    function first(){setTimeout(play,700)}
+    if(document.fonts&&document.fonts.ready) document.fonts.ready.then(first); else addEventListener('load',first);
+    if('IntersectionObserver' in window){
+      new IntersectionObserver(function(es){
+        es.forEach(function(e){if(e.isIntersecting&&e.intersectionRatio>=0.6&&armed&&!running&&Date.now()-lastEnd>3000) play()});
+      },{threshold:[0.6]}).observe(h1);
+    }
+    var rz;addEventListener('resize',function(){clearTimeout(rz);rz=setTimeout(function(){if(running){reset();fl.classList.add('fixed')}},150)});
+  })();
+</script>
+
+<script>
+  /* Hero camera view: the marks appear after the heading animation is over (about 5 s), play for ~9 s, fade, and repeat.
+     With "reduce motion" the final state is shown and nothing moves. */
+  (function(){
+    var el=document.getElementById('insp');
+    if(!el||matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+    function play(){
+      el.classList.remove('out');
+      void el.offsetWidth;                 /* restart the CSS animations */
+      el.classList.add('on');
+      setTimeout(function(){el.classList.add('out')},9000);
+      setTimeout(function(){el.classList.remove('on');play()},10200);
+    }
+    setTimeout(play,5000);
+  })();
+</script>
+
+<script>
+  /* Tunnel: fill the four walls with frames.
+     Each entry is [step along the depth 0-3, position across the wall, type, optional photo name (images/tunnel-NAME.jpg)]. A tile without a photo shows the drawn placeholder. The 4-step pattern is repeated 4 times.
+     Types: "ok" = a normal pack, "defect" = a pack the system has marked (only one, on the left wall). */
+  (function(){
+    var walls={
+      l:[[0,0,'ok','L1-cups'],[1,1,'defect','L2-defect'],[2,0,'ok','L3-tubes'],[3,1,'ok','L4-jars']],
+      r:[[0,1,'ok','R1-hall'],[1,0,'ok','R2-boxes'],[2,1,'ok','R3-bags'],[3,0,'ok','R4-bags']],
+      f:[[0,1,'ok','F1-cups'],[1,3,'ok','F2-tubes'],[2,0,'ok','F3-jars'],[3,2,'ok','F4-floor']],
+      c:[[0,2,'ok','C1-hall'],[2,1,'ok','C2-camera'],[3,3,'ok','C3-hall']]
+    };
+    Array.prototype.forEach.call(document.querySelectorAll('.tn-strip'),function(strip){
+      var w=strip.getAttribute('data-wall'),side=(w==='l'||w==='r');
+      for(var rep=0;rep<4;rep++) walls[w].forEach(function(t){
+        var el=document.createElement('div');
+        el.className='tn-tile'+(t[2]==='defect'?' defect':'');
+        var depth=t[0]+rep*4+1,across=t[1]+1;
+        el.style.gridColumn=side?depth:across;
+        el.style.gridRow=side?across:depth;
+        if(t[3]){var im=document.createElement('img');im.src='images/tunnel-'+t[3]+'.jpg';im.alt='';im.decoding='async';el.appendChild(im)}
+        strip.appendChild(el);
+      });
+    });
+    /* Walking: the viewer moves through the tunnel by scrolling the page (and, with a mouse, by dragging the tunnel).
+       Nothing moves on its own. If the system asks for reduced motion, the tunnel stays still. */
+    var tn=document.getElementById('tunnel');
+    if(matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+    var SPEED=0.075;            /* cqw of walking per 1px of scroll */
+    var drag=0,target=0,pos=0,raf=0;
+    function want(){return scrollY*SPEED+drag}
+    function tick(){
+      target=want();
+      pos+=(target-pos)*0.14;                       /* soft follow, so steps feel smooth */
+      if(Math.abs(target-pos)<0.01) pos=target;
+      tn.style.setProperty('--o',(((pos%80)+80)%80).toFixed(3));
+      raf=(pos!==target)?requestAnimationFrame(tick):0;
+    }
+    function wake(){if(!raf) raf=requestAnimationFrame(tick)}
+    addEventListener('scroll',wake,{passive:true});
+    pos=want();tick();
+    /* mouse drag: pull down to walk forward, push up to walk back */
+    if(matchMedia('(pointer:fine)').matches){
+      tn.classList.add('can-drag');
+      var lastY=null;
+      tn.addEventListener('pointerdown',function(e){if(e.pointerType!=='mouse')return;lastY=e.clientY;tn.setPointerCapture(e.pointerId);tn.classList.add('dragging')});
+      tn.addEventListener('pointermove',function(e){if(lastY===null)return;drag+=(e.clientY-lastY)*0.12;lastY=e.clientY;wake()});
+      ['pointerup','pointercancel'].forEach(function(n){tn.addEventListener(n,function(){lastY=null;tn.classList.remove('dragging')})});
+    }
+  })();
+</script>
+
+<script>
+  /* Demo only: nothing is sent anywhere. */
+  document.getElementById('f').addEventListener('submit',function(e){
+    e.preventDefault();
+    document.getElementById('note').textContent='Practice project: nothing was sent.';
+  });
+</script>
+
+<script>
+  /* Request block (desktop): the line "Tell us about your line..." stands on the same line as the "Work email" label on the right
+     (the baseline, the line the letters stand on). If the heading is two lines and takes that space, the text moves to the next field line ("Company"). */
+  (function(){
+    var p=document.getElementById('req-p'),f=document.getElementById('f');
+    if(!p||!f) return;
+    var labs=f.querySelectorAll('label span'),cv=document.createElement('canvas').getContext('2d');
+    function capTop(el){
+      /* baseline of the first line (name kept short), from the text's own rectangle (no helper elements: the form styles would change them) */
+      var t=document.createTreeWalker(el,NodeFilter.SHOW_TEXT).nextNode(),r=document.createRange();
+      r.selectNodeContents(t);
+      var c=getComputedStyle(el);cv.font=c.fontWeight+' '+c.fontSize+' '+c.fontFamily;
+      var m=cv.measureText('H');
+      return r.getClientRects()[0].top+m.fontBoundingBoxAscent;     /* the baseline: the line the letters stand on */
+    }
+    function align(){
+      p.style.marginTop='';
+      if(!matchMedia('(min-width:1024px)').matches) return;
+      var h=p.previousElementSibling,lab=null;
+      /* the first field label (from "Work email" down) that is at least 16px below the heading */
+      for(var i=1;i<labs.length;i++){ if(capTop(labs[i])>=h.getBoundingClientRect().bottom+16){lab=labs[i];break} }
+      if(!lab) return;
+      var d=capTop(lab)-capTop(p);      /* + = move down, - = move up */
+      if(Math.abs(d)<.3) return;
+      /* margins of the heading and the text overlap: a positive value must beat the heading's, a negative one is added to it */
+      p.style.marginTop=(d<0?d:parseFloat(getComputedStyle(h).marginBottom)+d).toFixed(2)+'px';
+    }
+    var rt;addEventListener('resize',function(){clearTimeout(rt);rt=setTimeout(align,100)});
+    if(document.fonts&&document.fonts.ready) document.fonts.ready.then(align);
+    align();
+  })();
+</script>
+<div class="gv" id="gv" aria-hidden="true"><div class="gv-m l"></div><div class="gv-m r"></div><div class="gv-in" id="gv-in"></div></div>
+<div class="gv-info" id="gv-info" aria-hidden="true"></div>
+<button class="gv-btn" id="gv-btn" type="button" aria-pressed="false" title="Show or hide the grid (key G)">Grid</button>
+<script>
+  /* Grid viewer: draws the margins and the columns from the same variables the page uses. */
+  (function(){
+    var gv=document.getElementById('gv'),inn=document.getElementById('gv-in'),btn=document.getElementById('gv-btn'),info=document.getElementById('gv-info');
+    if(!gv) return;
+    for(var i=0;i<12;i++) inn.appendChild(document.createElement('i'));
+    function text(){
+      var cs=getComputedStyle(document.documentElement),W=document.documentElement.clientWidth;
+      var m=parseFloat(cs.getPropertyValue('--margin')),g=parseFloat(cs.getPropertyValue('--gutter')),n=parseFloat(cs.getPropertyValue('--cols'));
+      var cw=(W-2*m-(n-1)*g)/n;
+      info.textContent=W+' px  ·  margin '+m+'  ·  '+n+' columns  ·  column '+cw.toFixed(1)+'  ·  gutter '+g;
+    }
+    function set(on){gv.classList.toggle('on',on);btn.setAttribute('aria-pressed',on?'true':'false');if(on)text()}
+    btn.addEventListener('click',function(){set(!gv.classList.contains('on'))});
+    addEventListener('keydown',function(e){
+      if((e.key==='g'||e.key==='G')&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&!/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||'')) set(!gv.classList.contains('on'));
+    });
+    addEventListener('resize',function(){if(gv.classList.contains('on'))text()});
+    if(location.hash==='#grid') set(true);
+  })();
+</script>
+<script>
+  /* Privacy pop-up: opens from the footer, closes with the button, Esc, or a click outside. */
+  (function(){
+    var d=document.getElementById('privacy'),o=document.getElementById('privacy-open'),c=document.getElementById('privacy-close');
+    if(!d||!o||!d.showModal) return;
+    o.addEventListener('click',function(){d.showModal()});
+    c.addEventListener('click',function(){d.close()});
+    d.addEventListener('click',function(e){if(e.target===d) d.close()});
+  })();
+</script>
+</body>
+</html>
